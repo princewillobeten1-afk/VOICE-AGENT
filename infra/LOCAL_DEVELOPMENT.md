@@ -18,11 +18,11 @@ docker compose up -d postgres redis
 
 PostgreSQL:
 
-- Host: `db.cxhqhpwyeavxsygxppyp.supabase.co`
-- Port: `5432`
-- Database: `voicesense`
-- User: `postgres`
-- Password: `postgres`
+User:      voicesense
+Password:  voicesense
+Host:      localhost
+Port:      5432
+Database:  voicesense
 
 Redis:
 
@@ -34,9 +34,9 @@ Redis:
 Create `.env` from `.env.example` and set:
 
 ```bash
-DATABASE_URL=postgresql://postgres:%40%24papa%2C123..@db.cxhqhpwyeavxsygxppyp.supabase.co:5432/postgres
+DATABASE_URL=postgresql+asyncpg://voicesense:voicesense@localhost:5432/voicesense
 REDIS_URL=redis://localhost:6379/0
-JWT_SECRET=1L/beJUiCIfAJPX0OV2Ny49O2AKywYoQ3KCh4vNXtRVRYE19HoAPbOlFY9DquV2vOncEHrw9+C1+ipQg+mIp4g==
+JWT_SECRET=replace-with-strong-random-secret
 ```
 
 ## Install API Dependencies
