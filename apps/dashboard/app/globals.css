@@ -4935,3 +4935,103 @@ button {
 @media (pointer: coarse) {
   .ws-nav-item, .ws-command-suggestion, .ws-search-shortcut, .ws-org-switcher, .ws-collapse, .ws-notification-button, .ws-org-pill, .ws-user-menu { min-height: 44px; }
 }
+.employees-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 7px 10px;
+  border: 1px solid var(--vs-border-subtle);
+  border-radius: 999px;
+  background: var(--vs-surface);
+  color: var(--vs-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.employees-live-pill span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--vs-warning);
+}
+
+.employees-live-pill.connected span {
+  background: var(--vs-success);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--vs-success) 14%, transparent);
+}
+
+.employees-live-pill.error span {
+  background: var(--vs-danger);
+}
+
+.employees-error {
+  margin: 0;
+  color: var(--vs-danger);
+  line-height: 1.6;
+}
+
+.employees-row-button {
+  width: 100%;
+  border: 1px solid transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.employees-row-button:hover,
+.employees-row-button:focus-visible,
+.employees-row-button.selected {
+  border-color: var(--vs-border-strong);
+  background: var(--vs-surface);
+}
+
+.employees-row-button:focus-visible {
+  outline: 2px solid var(--vs-focus);
+  outline-offset: 2px;
+}
+
+.employees-skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--vs-surface-muted);
+}
+
+.employees-skeleton::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--vs-surface) 70%, transparent), transparent);
+  animation: employees-skeleton 1.2s ease-in-out infinite;
+}
+
+.employees-skeleton-row {
+  pointer-events: none;
+}
+
+.employees-skeleton.line {
+  height: 12px;
+  width: min(100%, 360px);
+}
+
+.employees-skeleton.line.short {
+  width: 180px;
+}
+
+.employees-skeleton.line.tags {
+  width: 240px;
+}
+
+.employees-skeleton.metrics {
+  width: 260px;
+  height: 42px;
+}
+
+@keyframes employees-skeleton {
+  100% {
+    transform: translateX(100%);
+  }
+}

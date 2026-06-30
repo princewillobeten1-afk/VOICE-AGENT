@@ -44,11 +44,8 @@ Starting with Task 008, every major platform task must include at least one ADR 
 | [ADR-023](ADR-023-enterprise-security-governance-platform.md) | Enterprise Security, Administration, Compliance, and Governance Platform | Accepted | Task 026 - Enterprise Security, Administration, Compliance & Governance Platform |
 | [ADR-024](ADR-024-ai-studio-platform.md) | VoiceSense AI Studio Platform | Accepted | Task 027 - VoiceSense AI Studio |
 | [ADR-025](ADR-025-release-candidate-quality-strategy.md) | Release-Candidate Quality Strategy | Accepted | Task 028 - Final Product Polish & Production Readiness |
+| [ADR-026](ADR-026-live-data-integration-layer.md) | Live Data Integration Layer | Accepted | Live Data Integration Layer |
 
 ## Numbering
 
 ADR numbering follows long-lived architectural decisions, not only task numbers. Earlier foundational decisions can be documented retroactively when needed. New major tasks should continue from the latest ADR number unless a task requires multiple related ADRs.
-
-
-
-

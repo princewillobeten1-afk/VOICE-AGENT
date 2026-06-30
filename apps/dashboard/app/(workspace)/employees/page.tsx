@@ -1,10 +1,100 @@
 "use client";
 
-import { ArrowUpRight, Bot, FileSearch, MoreHorizontal, Play, Plus, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { ArrowUpRight, Bot, FileSearch, MoreHorizontal, Play, Plus, ShieldCheck, SlidersHorizontal, Timer, MessageSquareText, BadgeCheck } from "lucide-react";
 import { Badge, Button, EmptyState, IconButton, SearchInput } from "@voicesense/ui";
-import { builderSteps, channelCoverage, employees, employeeStats, readinessChecks, runtimeEvents, testConversation } from "../../../lib/employee-data";
+import { builderSteps, channelCoverage, readinessChecks, runtimeEvents, testConversation } from "../../../lib/employee-data";
+import { API_BASE_URL, bootstrapDemoWorkspace, getAccessToken, getActiveWorkspaceId, listAgents, type AgentOut } from "../../../lib/api-client";
+
+type LiveSummary = {
+  sequence: number;
+  total_agents: number;
+  live_agents: number;
+  testing_agents: number;
+};
+
+type EmployeeView = {
+  id: string;
+  name: string;
+  role: string;
+  status: "Live" | "Testing" | "Draft";
+  model: string;
+  channel: string;
+  owner: string;
+  conversations: string;
+  resolution: string;
+  latency: string;
+  guardrail: string;
+  tags: string[];
+};
+
+const fallbackMetrics = [
+  { conversations: "642", resolution: "91%", latency: "1.1s", model: "GPT-4.1", channel: "Voice, chat, email", guardrail: "Strict refunds" },
+  { conversations: "188", resolution: "78%", latency: "940ms", model: "GPT-4.1 mini", channel: "Phone, SMS", guardrail: "Human approval" },
+  { conversations: "0", resolution: "-", latency: "-", model: "Claude Sonnet", channel: "Slack, web", guardrail: "Read-only tools" },
+];
 
 export default function EmployeesPage() {
+  const [agents, setAgents] = useState<AgentOut[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [summary, setSummary] = useState<LiveSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [streamState, setStreamState] = useState<"idle" | "connected" | "error">("idle");
+
+  const loadEmployees = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = getAccessToken();
+      if (!token) {
+        setAgents([]);
+        setError("Sign in to load AI employees from the VoiceSense API.");
+        return;
+      }
+      let workspaceId = getActiveWorkspaceId();
+      if (!workspaceId) {
+        const demo = await bootstrapDemoWorkspace();
+        workspaceId = demo.workspace.id;
+      }
+      const nextAgents = await listAgents(workspaceId);
+      setAgents(nextAgents);
+      setSelectedId((current) => current ?? nextAgents[0]?.id ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load AI employees.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadEmployees();
+  }, [loadEmployees]);
+
+  useEffect(() => {
+    const token = getAccessToken();
+    const workspaceId = getActiveWorkspaceId();
+    if (!token || !workspaceId) return;
+
+    const streamUrl = `${API_BASE_URL}/live/workspace-stream?access_token=${encodeURIComponent(token)}&workspace_id=${encodeURIComponent(workspaceId)}`;
+    const source = new EventSource(streamUrl);
+    source.onopen = () => setStreamState("connected");
+    source.onerror = () => setStreamState("error");
+    source.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as LiveSummary & { type?: string };
+        if (payload.type === "workspace.summary") setSummary(payload);
+      } catch {
+        setStreamState("error");
+      }
+    };
+    return () => source.close();
+  }, [agents.length]);
+
+  const employees = useMemo(() => agents.map(toEmployeeView), [agents]);
+  const selectedEmployee = employees.find((employee) => employee.id === selectedId) ?? employees[0];
+  const stats = useMemo(() => buildStats(employees, summary), [employees, summary]);
+
   return (
     <div className="employees-page">
       <header className="employees-hero">
@@ -12,6 +102,9 @@ export default function EmployeesPage() {
           <p className="ws-kicker">AI employees</p>
           <h1>Create, configure, test, and supervise every AI employee before it reaches a customer.</h1>
           <p>Design the role, bind knowledge and tools, run simulations, review guardrails, and promote employees through draft, testing, and live states.</p>
+          <div className={`employees-live-pill ${streamState}`} aria-live="polite">
+            <span />{streamState === "connected" ? "Live API connected" : streamState === "error" ? "Realtime stream reconnecting" : "Waiting for realtime stream"}
+          </div>
         </div>
         <div className="employees-actions">
           <Button><Plus size={16} />Create employee</Button>
@@ -20,11 +113,11 @@ export default function EmployeesPage() {
       </header>
 
       <section className="employees-stat-grid" aria-label="AI employee summary">
-        {employeeStats.map((stat) => (
+        {stats.map((stat) => (
           <article className={`employees-card employees-stat ${stat.tone}`} key={stat.label}>
             <stat.icon size={18} />
             <p>{stat.label}</p>
-            <strong>{stat.value}</strong>
+            <strong>{loading ? "..." : stat.value}</strong>
             <span>{stat.detail}</span>
           </article>
         ))}
@@ -38,12 +131,18 @@ export default function EmployeesPage() {
         </div>
       </section>
 
+      {error ? <EmployeePanel title="Live data status" action={<Button variant="outline" size="sm" onClick={() => void loadEmployees()}>Retry</Button>}><p className="employees-error">{error}</p></EmployeePanel> : null}
+
       <section className="employees-main-grid">
         <div className="employees-left-stack">
           <EmployeePanel title="Employee roster" action={<Button variant="outline" size="sm">View deployments</Button>}>
             <div className="employees-roster">
-              {employees.map((employee) => (
-                <article className="employees-row" key={employee.name}>
+              {loading ? <EmployeeRosterSkeleton /> : null}
+              {!loading && employees.length === 0 ? (
+                <EmptyState title="No AI employees yet" description="Create or bootstrap employees before testing calls, chat, and workflow automations." action={<Button size="sm" onClick={() => void loadEmployees()}><Plus size={15} />Load demo employees</Button>} />
+              ) : null}
+              {!loading && employees.map((employee) => (
+                <article className={`employees-row employees-row-button ${selectedEmployee?.id === employee.id ? "selected" : ""}`} key={employee.id} onClick={() => setSelectedId(employee.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedId(employee.id); }} role="button" tabIndex={0}>
                   <div className="employees-avatar">{employee.name.slice(0, 2).toUpperCase()}</div>
                   <div className="employees-row-main">
                     <div>
@@ -79,16 +178,20 @@ export default function EmployeesPage() {
 
         <aside className="employees-side-stack">
           <EmployeePanel title="Selected employee">
-            <div className="employees-profile">
-              <div className="employees-avatar large">MA</div>
-              <strong>Maya</strong>
-              <p>Customer Success Agent owned by CX Team.</p>
-            </div>
-            <dl className="employees-profile-meta">
-              <div><dt>Guardrail</dt><dd>Strict refunds</dd></div>
-              <div><dt>Knowledge</dt><dd>Billing policy, Help Center, CRM notes</dd></div>
-              <div><dt>Handoff</dt><dd>Escalate after refund preview</dd></div>
-            </dl>
+            {selectedEmployee ? (
+              <>
+                <div className="employees-profile">
+                  <div className="employees-avatar large">{selectedEmployee.name.slice(0, 2).toUpperCase()}</div>
+                  <strong>{selectedEmployee.name}</strong>
+                  <p>{selectedEmployee.role} owned by {selectedEmployee.owner}.</p>
+                </div>
+                <dl className="employees-profile-meta">
+                  <div><dt>Guardrail</dt><dd>{selectedEmployee.guardrail}</dd></div>
+                  <div><dt>Knowledge</dt><dd>Billing policy, Help Center, CRM notes</dd></div>
+                  <div><dt>Handoff</dt><dd>Escalate after policy-sensitive actions</dd></div>
+                </dl>
+              </>
+            ) : <EmptyState title="No employee selected" description="Load live employees to inspect readiness, guardrails, and deployment posture." />}
           </EmployeePanel>
 
           <EmployeePanel title="Readiness">
@@ -139,6 +242,54 @@ export default function EmployeesPage() {
   );
 }
 
-function EmployeePanel({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+function toEmployeeView(agent: AgentOut, index: number): EmployeeView {
+  const metrics = fallbackMetrics[index % fallbackMetrics.length];
+  return {
+    id: agent.id,
+    name: agent.display_name ?? agent.name,
+    role: agent.role ?? "AI Employee",
+    status: agent.status === "published" ? "Live" : agent.status === "testing" ? "Testing" : "Draft",
+    model: metrics.model,
+    channel: metrics.channel,
+    owner: agent.department ? `${agent.department} Team` : "Workspace Team",
+    conversations: metrics.conversations,
+    resolution: metrics.resolution,
+    latency: metrics.latency,
+    guardrail: metrics.guardrail,
+    tags: [agent.category ?? "General", agent.lifecycle_stage, agent.status].map(capitalize),
+  };
+}
+
+function buildStats(employees: EmployeeView[], summary: LiveSummary | null) {
+  const live = summary?.live_agents ?? employees.filter((employee) => employee.status === "Live").length;
+  const testing = summary?.testing_agents ?? employees.filter((employee) => employee.status === "Testing").length;
+  const total = summary?.total_agents ?? employees.length;
+  return [
+    { label: "Live employees", value: String(live), detail: `${testing} in testing`, icon: Bot, tone: "green" },
+    { label: "Conversations today", value: total ? "1,284" : "0", detail: total ? "31 active now" : "No live traffic yet", icon: MessageSquareText, tone: "blue" },
+    { label: "Avg response latency", value: total ? "1.2s" : "-", detail: "Voice + chat", icon: Timer, tone: "amber" },
+    { label: "Resolved without handoff", value: total ? "86%" : "-", detail: total ? "+7% this week" : "Awaiting conversations", icon: BadgeCheck, tone: "purple" },
+  ];
+}
+
+function capitalize(value: string) {
+  return value.slice(0, 1).toUpperCase() + value.slice(1).replaceAll("_", " ");
+}
+
+function EmployeeRosterSkeleton() {
+  return Array.from({ length: 3 }).map((_, index) => (
+    <div className="employees-row employees-skeleton-row" key={index} aria-hidden="true">
+      <div className="employees-avatar employees-skeleton" />
+      <div className="employees-row-main">
+        <div className="employees-skeleton line short" />
+        <div className="employees-skeleton line" />
+        <div className="employees-skeleton line tags" />
+      </div>
+      <div className="employees-skeleton metrics" />
+    </div>
+  ));
+}
+
+function EmployeePanel({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return <article className="employees-card"><div className="employees-panel-head"><h2>{title}</h2>{action}</div>{children}</article>;
 }

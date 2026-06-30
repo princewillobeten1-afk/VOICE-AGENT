@@ -1,15 +1,15 @@
 "use client";
 
-import * as React from "react";
+import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { Alert, Button, EmailInput, Field, HelperText, Label, PasswordInput, TextInput } from "@voicesense/ui";
-import { authCopy, type AuthFormState, simulateAuthRequest, validateEmail } from "../../../lib/auth-client";
+import { authCopy, realSignUp, type AuthFormState, validateEmail } from "../../../lib/auth-client";
 import { AuthShell } from "../AuthShell";
 
 export default function SignUpPage() {
-  const [state, setState] = React.useState<AuthFormState>({ status: "idle" });
+  const [state, setState] = useState<AuthFormState>({ status: "idle" });
 
-  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const email = String(form.get("email") ?? "");
@@ -21,7 +21,9 @@ export default function SignUpPage() {
       return;
     }
     setState({ status: "loading" });
-    setState(await simulateAuthRequest("Workspace created. The API endpoint is /v1/auth/signup."));
+    const result = await realSignUp(name, email, password, organization);
+    setState(result);
+    if (result.status === "success") window.location.href = "/employees";
   }
 
   return (

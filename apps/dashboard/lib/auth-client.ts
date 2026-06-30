@@ -1,3 +1,5 @@
+import { bootstrapDemoWorkspace, signIn, signUp, storeAuthSession } from "./api-client";
+
 export type AuthFormState = {
   status: "idle" | "loading" | "success" | "error";
   message?: string;
@@ -28,6 +30,28 @@ export const authCopy = {
 
 export function validateEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+export async function realSignIn(email: string, password: string): Promise<AuthFormState> {
+  try {
+    const auth = await signIn(email, password);
+    storeAuthSession(auth);
+    await bootstrapDemoWorkspace();
+    return { status: "success", message: "Signed in and connected to live workspace data." };
+  } catch (error) {
+    return { status: "error", message: error instanceof Error ? error.message : "Could not sign in." };
+  }
+}
+
+export async function realSignUp(name: string, email: string, password: string, organization: string): Promise<AuthFormState> {
+  try {
+    const auth = await signUp(name, email, password, organization);
+    storeAuthSession(auth);
+    await bootstrapDemoWorkspace();
+    return { status: "success", message: "Workspace created and live demo data is ready." };
+  } catch (error) {
+    return { status: "error", message: error instanceof Error ? error.message : "Could not create workspace." };
+  }
 }
 
 export async function simulateAuthRequest(successMessage: string): Promise<AuthFormState> {
