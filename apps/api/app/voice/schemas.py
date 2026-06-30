@@ -10,10 +10,10 @@ class VoiceConfigurationBase(BaseModel):
     status: str = "draft"
     language: str = "en"
     accent: str | None = None
-    stt_provider: str = "placeholder"
-    stt_model: str | None = None
-    tts_provider: str = "placeholder"
-    tts_model: str | None = None
+    stt_provider: str = "cartesia"
+    stt_model: str | None = "ink"
+    tts_provider: str = "cartesia"
+    tts_model: str | None = "sonic-2"
     voice_id: str | None = None
     speaking_speed: str | None = "1.0"
     stability: str | None = None
