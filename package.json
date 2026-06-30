@@ -1,0 +1,23 @@
+{
+    "name":  "voicesense",
+    "private":  true,
+    "version":  "0.1.0",
+    "description":  "AI Employee Platform foundation for VoiceSense.",
+    "workspaces":  [
+                       "apps/*",
+                       "packages/*"
+                   ],
+    "scripts":  {
+                    "dev":  "npm run dev -w @voicesense/dashboard",
+                    "lint":  "npm run lint -w @voicesense/dashboard",
+                    "test":  "npm run test:api",
+                    "build":  "npm run build -w @voicesense/dashboard",
+                    "check:dashboard":  "npm run build -w @voicesense/dashboard",
+                    "check:api":  "cd apps/api \u0026\u0026 .venv\\Scripts\\python.exe -m compileall app",
+                    "test:api":  "cd apps/api \u0026\u0026 .venv\\Scripts\\python.exe -m pytest",
+                    "quality:rc":  "npm run check:dashboard \u0026\u0026 npm run check:api"
+                },
+    "engines":  {
+                    "node":  "\u003e=22"
+                }
+}
