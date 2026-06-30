@@ -9,8 +9,8 @@ class AudioChunk:
     sequence_number: int
     payload_ref: str | None
     duration_ms: int
-    codec: str = "pcm16"
-    sample_rate_hz: int = 16000
+    codec: str = "pcm_mulaw"
+    sample_rate_hz: int = 8000
 
 
 @dataclass(frozen=True)
@@ -87,32 +87,62 @@ class EnergyThresholdVad:
 
 class VoiceProviderRegistry:
     def __init__(self) -> None:
-        self._stt: dict[str, SpeechToTextProvider] = {"placeholder": PlaceholderSpeechToTextProvider()}
-        self._tts: dict[str, TextToSpeechProvider] = {"placeholder": PlaceholderTextToSpeechProvider()}
+        # Import lazily here to avoid circular imports: adapters depend on provider dataclasses.
+        from app.voice.adapters.cartesia import CartesiaRealtimeProvider
+        from app.voice.adapters.gemini import GeminiReasoningProvider
+
+        cartesia = CartesiaRealtimeProvider()
+        self._stt: dict[str, SpeechToTextProvider] = {
+            "cartesia": cartesia,
+            "placeholder": PlaceholderSpeechToTextProvider(),
+        }
+        self._tts: dict[str, TextToSpeechProvider] = {
+            "cartesia": cartesia,
+            "placeholder": PlaceholderTextToSpeechProvider(),
+        }
+        self._llm: dict[str, GeminiReasoningProvider] = {"gemini": GeminiReasoningProvider()}
         self._vad: dict[str, VoiceActivityDetector] = {"energy_threshold": EnergyThresholdVad()}
 
-    def stt(self, provider: str) -> SpeechToTextProvider:
-        return self._stt.get(provider, self._stt["placeholder"])
+    def stt(self, provider: str = "cartesia") -> SpeechToTextProvider:
+        return self._stt.get(provider, self._stt["cartesia"])
 
-    def tts(self, provider: str) -> TextToSpeechProvider:
-        return self._tts.get(provider, self._tts["placeholder"])
+    def tts(self, provider: str = "cartesia") -> TextToSpeechProvider:
+        return self._tts.get(provider, self._tts["cartesia"])
+
+    def llm(self, provider: str = "gemini"):
+        return self._llm.get(provider, self._llm["gemini"])
 
     def vad(self, provider: str = "energy_threshold") -> VoiceActivityDetector:
         return self._vad.get(provider, self._vad["energy_threshold"])
 
     def provider_catalog(self) -> list[dict]:
         return [
-            {"type": "stt", "provider": "deepgram", "status": "architecture_ready", "capabilities": ["streaming", "interim_transcripts", "language_detection"]},
-            {"type": "stt", "provider": "assemblyai", "status": "architecture_ready", "capabilities": ["streaming", "speaker_labels"]},
-            {"type": "stt", "provider": "openai", "status": "architecture_ready", "capabilities": ["streaming", "multilingual"]},
-            {"type": "stt", "provider": "google", "status": "architecture_ready", "capabilities": ["streaming", "enterprise_regions"]},
-            {"type": "stt", "provider": "azure", "status": "architecture_ready", "capabilities": ["streaming", "private_networking"]},
-            {"type": "tts", "provider": "elevenlabs", "status": "architecture_ready", "capabilities": ["streaming", "voice_cloning", "emotion"]},
-            {"type": "tts", "provider": "cartesia", "status": "architecture_ready", "capabilities": ["low_latency", "streaming"]},
-            {"type": "tts", "provider": "openai", "status": "architecture_ready", "capabilities": ["streaming", "multilingual"]},
-            {"type": "tts", "provider": "azure", "status": "architecture_ready", "capabilities": ["enterprise_regions"]},
-            {"type": "tts", "provider": "google", "status": "architecture_ready", "capabilities": ["custom_voice"]},
-            {"type": "vad", "provider": "energy_threshold", "status": "implemented_placeholder", "capabilities": ["speech_start", "silence"]},
+            {
+                "type": "stt",
+                "provider": "cartesia",
+                "product": "ink",
+                "status": "implemented",
+                "capabilities": ["streaming", "realtime", "turn_detection"],
+            },
+            {
+                "type": "llm",
+                "provider": "gemini",
+                "status": "implemented",
+                "capabilities": ["response_generation", "tool_calling_ready"],
+            },
+            {
+                "type": "tts",
+                "provider": "cartesia",
+                "product": "sonic",
+                "status": "implemented",
+                "capabilities": ["streaming", "custom_voice", "low_latency"],
+            },
+            {
+                "type": "vad",
+                "provider": "energy_threshold",
+                "status": "fallback",
+                "capabilities": ["speech_start", "silence"],
+            },
         ]
 
 
