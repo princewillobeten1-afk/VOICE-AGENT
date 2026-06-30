@@ -1,8 +1,9 @@
-﻿from datetime import UTC, datetime
+from datetime import UTC, datetime
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.identity.audit import audit
 from app.identity.dependencies import CurrentUser, require_permission
@@ -14,9 +15,31 @@ from app.telephony.service import analytics, call_dict, create_call, event_dict,
 router = APIRouter(prefix="/telephony", tags=["telephony"])
 
 
+def _websocket_url_from_base(base_url: str | None) -> str:
+    base = (base_url or "https://localhost:8000").rstrip("/")
+    if base.startswith("https://"):
+        base = "wss://" + base.removeprefix("https://")
+    elif base.startswith("http://"):
+        base = "ws://" + base.removeprefix("http://")
+    return f"{base}/v1/voice/twilio/stream"
+
+
+@router.post("/twilio/incoming-call", include_in_schema=False)
+async def twilio_incoming_call():
+    """Public Twilio webhook that connects a phone call to the voice WebSocket."""
+    stream_url = _websocket_url_from_base(get_settings().twilio_webhook_base_url)
+    twiml = f"""<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<Response>
+  <Connect>
+    <Stream url=\"{stream_url}\" />
+  </Connect>
+</Response>"""
+    return Response(content=twiml, media_type="application/xml")
+
+
 @router.get("/providers/catalog")
 async def provider_catalog():
-    return {"providers": ["twilio", "telnyx", "plivo", "vonage", "signalwire", "amazon_connect", "azure_communication_services", "custom_sip"], "note": "Provider adapters are configured, not hardcoded."}
+    return {"providers": ["twilio", "telnyx", "plivo", "vonage", "signalwire", "amazon_connect", "azure_communication_services", "custom_sip"], "note": "Provider adapters are configured, not hardcoded. Twilio Media Streams is the active realtime phone-call bridge."}
 
 
 @router.post("/providers", response_model=ProviderOut, status_code=status.HTTP_201_CREATED)
