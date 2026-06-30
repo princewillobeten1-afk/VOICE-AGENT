@@ -8,7 +8,7 @@ from app.notifications.service import publish_domain_event
 from app.voice.models import VoiceAudioMetadata, VoiceConfiguration, VoiceProviderSetting, VoiceSession, VoiceSessionMetric, VoiceStreamEvent
 from app.voice.providers import AudioChunk, provider_registry
 
-DEFAULT_AUDIO_FORMAT = {"codec": "pcm16", "sample_rate_hz": 16000, "channels": 1, "chunk_ms": 20}
+DEFAULT_AUDIO_FORMAT = {"codec": "pcm_mulaw", "sample_rate_hz": 8000, "channels": 1, "chunk_ms": 20}
 DEFAULT_VAD = {"provider": "energy_threshold", "min_speech_ms": 120, "silence_timeout_ms": 650, "noise_suppression": "provider"}
 DEFAULT_INTERRUPTION = {"barge_in_enabled": True, "stop_playback_on_speech": True, "preserve_partial_response": True, "resume_strategy": "immediate"}
 DEFAULT_LATENCY_BUDGET = {"audio_ingest_ms": 30, "vad_ms": 20, "stt_ms": 250, "reasoning_ms": 700, "tts_ms": 250, "total_ms": 1200}
@@ -181,7 +181,7 @@ async def start_voice_session(db: AsyncSession, current: CurrentUser, payload) -
         pending_tool_calls=[],
         context_snapshot=payload.context_snapshot,
         memory_updates=[],
-        conversation_state={"turns": [], "pipeline": "audio->vad->stt->conversation->orchestrator->tts->audio", "streaming": True},
+        conversation_state={"turns": [], "pipeline": "twilio->cartesia_ink->gemini->cartesia_sonic->twilio", "streaming": True},
         transport_state={"mode": payload.transport_mode, "connection_id": payload.connection_id, "secure_transport_required": True},
         started_at=now,
         last_activity_at=now,
@@ -189,8 +189,8 @@ async def start_voice_session(db: AsyncSession, current: CurrentUser, payload) -
     )
     db.add(session)
     await db.flush()
-    db.add(VoiceAudioMetadata(organization_id=current.organization_id, workspace_id=session.workspace_id, session_id=session.id, direction="inbound", codec="pcm16", sample_rate_hz=16000, channels=1, storage_policy="metadata_only"))
-    db.add(VoiceAudioMetadata(organization_id=current.organization_id, workspace_id=session.workspace_id, session_id=session.id, direction="outbound", codec="pcm16", sample_rate_hz=16000, channels=1, storage_policy="metadata_only"))
+    db.add(VoiceAudioMetadata(organization_id=current.organization_id, workspace_id=session.workspace_id, session_id=session.id, direction="inbound", codec="pcm_mulaw", sample_rate_hz=8000, channels=1, storage_policy="metadata_only"))
+    db.add(VoiceAudioMetadata(organization_id=current.organization_id, workspace_id=session.workspace_id, session_id=session.id, direction="outbound", codec="pcm_mulaw", sample_rate_hz=8000, channels=1, storage_policy="metadata_only"))
     await append_stream_event(db, current, session, "session.started", "system", "session", {"channel": session.channel, "direction": session.direction})
     return session
 
@@ -211,13 +211,14 @@ async def process_stream_event(db: AsyncSession, current: CurrentUser, session: 
         config = await db.get(VoiceConfiguration, session.voice_configuration_id) if session.voice_configuration_id else None
         vad_config = config.vad_config if config else DEFAULT_VAD
         audio_config = config.audio_format if config else DEFAULT_AUDIO_FORMAT
-        chunk = AudioChunk(sequence_number=incoming.sequence_number, payload_ref=payload.payload.get("payload_ref"), duration_ms=int(payload.payload.get("duration_ms", audio_config.get("chunk_ms", 20))), codec=audio_config.get("codec", "pcm16"), sample_rate_hz=int(audio_config.get("sample_rate_hz", 16000)))
+        chunk = AudioChunk(sequence_number=incoming.sequence_number, payload_ref=payload.payload.get("payload_ref"), duration_ms=int(payload.payload.get("duration_ms", audio_config.get("chunk_ms", 20))), codec=audio_config.get("codec", "pcm_mulaw"), sample_rate_hz=int(audio_config.get("sample_rate_hz", 8000)))
         vad = await provider_registry.vad(vad_config.get("provider", "energy_threshold")).detect(chunk, vad_config)
         emitted.append(await append_stream_event(db, current, session, f"vad.{vad.event}", "voice-engine", "vad", {"confidence": vad.confidence, "silence_ms": vad.silence_ms, "noise_score": vad.noise_score}, 12, vad_config.get("provider")))
         if vad.event == "speech_detected":
             session.current_speaker = "user"
-            transcript = await provider_registry.stt((config.stt_provider if config else "placeholder")).transcribe_stream(chunk, {"language": config.language if config else "en"})
-            emitted.append(await append_stream_event(db, current, session, "stt.partial", "voice-engine", "stt", {"text": transcript.text, "is_final": transcript.is_final, "confidence": transcript.confidence, "language": transcript.language}, transcript.latency_ms, config.stt_provider if config else "placeholder"))
+            stt_provider = config.stt_provider if config else "cartesia"
+            transcript = await provider_registry.stt(stt_provider).transcribe_stream(chunk, {"language": config.language if config else "en", "payload": payload.payload.get("payload_ref"), "sample_rate": chunk.sample_rate_hz})
+            emitted.append(await append_stream_event(db, current, session, "stt.partial", "voice-engine", "stt", {"text": transcript.text, "is_final": transcript.is_final, "confidence": transcript.confidence, "language": transcript.language}, transcript.latency_ms, stt_provider))
     if payload.event_type == "user.interrupt":
         session.interrupt_count += 1
         session.current_speaker = "user"

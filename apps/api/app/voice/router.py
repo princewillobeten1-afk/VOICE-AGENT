@@ -1,5 +1,5 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
@@ -8,15 +8,35 @@ from app.identity.dependencies import CurrentUser, require_permission
 from app.identity.rbac import Permission
 from app.voice.models import VoiceConfiguration, VoiceProviderSetting, VoiceSession, VoiceSessionMetric, VoiceStreamEvent
 from app.voice.providers import provider_registry
+from app.voice.realtime_pipeline import RealtimeVoicePipeline
 from app.voice.schemas import VoiceConfigurationCreate, VoiceConfigurationOut, VoiceConfigurationUpdate, VoiceProviderSettingCreate, VoiceProviderSettingOut, VoiceSessionCreate, VoiceSessionDetail, VoiceSessionMetricOut, VoiceSessionOut, VoiceStreamEventBatch, VoiceStreamEventCreate, VoiceStreamEventOut, VoiceTerminateRequest, VoiceTestRunRequest, VoiceTestRunResult
 from app.voice.service import append_stream_event, configuration_dict, create_default_configuration, emit_voice_event, event_dict, get_owned_configuration, get_owned_session, metric_dict, process_stream_event, provider_setting_dict, record_latency_metric, session_dict, start_voice_session, terminate_session
 
 router = APIRouter(prefix="/voice", tags=["voice-engine"])
 
 
+@router.websocket("/twilio/stream")
+async def twilio_voice_stream(websocket: WebSocket):
+    """Twilio Media Streams bridge for Cartesia Ink → Gemini → Cartesia Sonic.
+
+    This route intentionally does not use dashboard auth because Twilio connects directly.
+    Add Twilio signature validation at the webhook layer before production use.
+    """
+    await websocket.accept()
+    pipeline = RealtimeVoicePipeline()
+    try:
+        while True:
+            event = await websocket.receive_json()
+            outbound_messages = await pipeline.handle_twilio_event(event)
+            for message in outbound_messages:
+                await websocket.send_json(message)
+    except WebSocketDisconnect:
+        return
+
+
 @router.get("/providers")
 async def provider_catalog(current: CurrentUser = Depends(require_permission(Permission.ORG_READ))):
-    return {"providers": provider_registry.provider_catalog(), "selection_strategy": "workspace configuration with priority-ordered fallback chains"}
+    return {"providers": provider_registry.provider_catalog(), "selection_strategy": "Cartesia Ink STT + Gemini reasoning + Cartesia Sonic TTS with energy-threshold fallback VAD"}
 
 
 @router.get("/configurations", response_model=list[VoiceConfigurationOut])
@@ -151,5 +171,5 @@ async def session_metrics(session_id: UUID, current: CurrentUser = Depends(requi
 @router.post("/test-run", response_model=VoiceTestRunResult)
 async def test_run(payload: VoiceTestRunRequest, current: CurrentUser = Depends(require_permission(Permission.ORG_READ)), db: AsyncSession = Depends(get_db)):
     config = await get_owned_configuration(db, payload.voice_configuration_id, current) if payload.voice_configuration_id else None
-    provider_plan = {"stt": config.stt_provider if config else "placeholder", "tts": config.tts_provider if config else "placeholder", "vad": (config.vad_config or {}).get("provider", "energy_threshold") if config else "energy_threshold", "fallback_chain": config.fallback_chain if config else []}
-    return VoiceTestRunResult(status="simulation_ready", pipeline=["audio_stream", "vad", "stt", "conversation_manager", "ai_orchestrator_placeholder", "tool_execution_placeholder", "tts", "audio_stream"], transcript_preview="This is a simulated real-time voice test. No provider call was made.", tts_payload_ref="memory://placeholder-audio-chunk", estimated_latency_ms=412, provider_plan=provider_plan, safety_notes=["Raw audio storage is disabled by default.", "Tool execution and advanced reasoning remain placeholders in Task 013.", "Provider credentials are referenced by secret_ref only."])
+    provider_plan = {"stt": config.stt_provider if config else "cartesia", "llm": "gemini", "tts": config.tts_provider if config else "cartesia", "vad": (config.vad_config or {}).get("provider", "energy_threshold") if config else "energy_threshold", "fallback_chain": config.fallback_chain if config else []}
+    return VoiceTestRunResult(status="simulation_ready", pipeline=["twilio_media_stream", "cartesia_ink_stt", "gemini_reasoning", "cartesia_sonic_tts", "twilio_audio_stream"], transcript_preview="This is a simulated real-time voice test. No provider call was made.", tts_payload_ref="memory://placeholder-audio-chunk", estimated_latency_ms=412, provider_plan=provider_plan, safety_notes=["Raw audio storage is disabled by default.", "External provider calls are mocked in test-run.", "Provider credentials are referenced from environment only."])
